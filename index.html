@@ -133,15 +133,38 @@ body{
 .content-inner{ max-width:980px; margin:0 auto; }
 
 .page-head{ margin-bottom:26px; }
+.page-head-top{
+  display:flex; justify-content:space-between; align-items:flex-end; gap:16px 24px; flex-wrap:wrap;
+  margin-bottom:8px;
+}
 .page-head .kicker{
   font-family:'IBM Plex Mono',monospace; font-size:11px; letter-spacing:.1em; text-transform:uppercase;
   color:var(--orange-2); margin-bottom:6px;
 }
 .page-head h1{
-  font-family:'Fraunces',serif; font-weight:600; font-size:34px; line-height:1.1; margin:0 0 8px;
+  font-family:'Fraunces',serif; font-weight:600; font-size:34px; line-height:1.1; margin:0;
   color:var(--navy-3);
 }
 .page-head p{ margin:0; color:var(--ink-soft); font-size:14.5px; max-width:62ch; }
+.main-drive-btn{
+  display:inline-flex; align-items:center; gap:8px; flex-shrink:0;
+  padding:11px 18px; border-radius:9px; background:var(--navy); border:1px solid var(--navy);
+  color:#fff; font-weight:600; font-size:13.5px; text-decoration:none;
+  transition:background .12s, border-color .12s, transform .1s;
+  margin-bottom:2px;
+}
+.main-drive-btn:hover{ background:var(--orange-2); border-color:var(--orange-2); transform:translateY(-1px); }
+
+.restricted-badge{ margin-left:auto; font-size:11px; opacity:.6; flex-shrink:0; }
+.restricted-gate{
+  border:1.5px dashed var(--line); border-radius:14px; padding:56px 30px; text-align:center;
+  margin-top:6px; background:var(--white);
+}
+.restricted-lock{ font-size:30px; margin-bottom:14px; opacity:.75; }
+.restricted-title{
+  font-family:'Fraunces',serif; font-weight:600; font-size:20px; color:var(--navy-3); margin-bottom:10px;
+}
+.restricted-gate p{ color:var(--ink-soft); font-size:14px; max-width:44ch; margin:0 auto 22px; }
 
 /* Sub-section title (used for MEDSUM AND DEMAND variants etc) */
 .subsection{
@@ -350,7 +373,8 @@ footer.page-footer{
       li.dataset.key = t.key;
       const btn = document.createElement('button');
       btn.className = 'tab-btn';
-      btn.innerHTML = `<span class="dot"></span>${t.name}`;
+      const lockBadge = t.key === 'TRAINING TOOLS AND RESOURCES' ? '<span class="restricted-badge" title="Training Team only">&#128274;</span>' : '';
+      btn.innerHTML = `<span class="dot"></span>${t.name}${lockBadge}`;
       btn.addEventListener('click', () => selectTopic(t.key));
       li.appendChild(btn);
       tabList.appendChild(li);
@@ -446,14 +470,60 @@ footer.page-footer{
       <span class="swatch">${escapeHTML(initials)}</span>${escapeHTML(l.label || 'Resource')}</a>`;
   }
 
+  function extractMainFolderLink(sheet, topicName) {
+    const target = topicName.trim().toLowerCase();
+    for (const s of (sheet.sections || [])) {
+      if (!s.trailing_links) continue;
+      const idx = s.trailing_links.findIndex(l => l.label && l.link && l.label.trim().toLowerCase() === target);
+      if (idx !== -1) return s.trailing_links.splice(idx, 1)[0];
+    }
+    if (sheet.notes) {
+      const idx = sheet.notes.findIndex(l => l.label && l.link && l.label.trim().toLowerCase() === target);
+      if (idx !== -1) return sheet.notes.splice(idx, 1)[0];
+    }
+    return null;
+  }
+
+  const mainFolderCache = {};
   function renderTopic(key) {
     const topic = DATA.topics.find(t => t.key === key);
     const sheet = DATA.sheets[key];
+    if (!(key in mainFolderCache)) {
+      mainFolderCache[key] = extractMainFolderLink(sheet, topic.name);
+    }
+    const mainFolder = mainFolderCache[key];
+    const driveBtn = mainFolder
+      ? `<a class="main-drive-btn" href="${escapeAttr(mainFolder.link)}" title="${escapeAttr(mainFolder.link)}" target="_blank" rel="noopener">
+          <span>&#128193;</span> Open in Main Drive</a>`
+      : '';
     let html = `<div class="page-head">
-      <div class="kicker">Training Directory</div>
-      <h1>${escapeHTML(topic.name)}</h1>
-      <p>${describeSheet(sheet)}</p>
+      <div class="page-head-top">
+        <div>
+          <div class="kicker">Training Directory</div>
+          <h1>${escapeHTML(topic.name)}</h1>
+        </div>
+        ${driveBtn}
+      </div>
     </div>`;
+
+    const RESTRICTED_KEY = 'TRAINING TOOLS AND RESOURCES';
+    if (key === RESTRICTED_KEY && sessionStorage.getItem('lsh_unlocked_tools') !== '1') {
+      html += `<div class="restricted-gate">
+        <div class="restricted-lock">&#128274;</div>
+        <div class="restricted-title">Restricted — Training Team Only</div>
+        <p>This folder contains internal tools and templates limited to the Training &amp; Development team.</p>
+        <button class="main-drive-btn" id="unlockToolsBtn" type="button">I'm on the Training Team — Continue</button>
+      </div>`;
+      contentInner.innerHTML = html;
+      const btn = document.getElementById('unlockToolsBtn');
+      if (btn) btn.addEventListener('click', () => {
+        sessionStorage.setItem('lsh_unlocked_tools', '1');
+        renderTopic(key);
+      });
+      contentInner.scrollTop = 0;
+      window.scrollTo({ top: 0, behavior: 'instant' in window ? 'instant' : 'auto' });
+      return;
+    }
 
     const hasSections = sheet.sections && sheet.sections.length;
     const hasNotes = sheet.notes && sheet.notes.length;
@@ -475,16 +545,6 @@ footer.page-footer{
     contentInner.innerHTML = html;
     contentInner.scrollTop = 0;
     window.scrollTo({ top: 0, behavior: 'instant' in window ? 'instant' : 'auto' });
-  }
-
-  function describeSheet(sheet) {
-    const dayCount = (sheet.sections || []).reduce((a, s) => a + (s.rows ? s.rows.length : 0), 0);
-    const resCount = (sheet.sections || []).reduce((a, s) => a + (s.trailing_links ? s.trailing_links.length : 0), 0) + (sheet.notes ? sheet.notes.length : 0);
-    const parts = [];
-    if (dayCount) parts.push(`${dayCount} training day${dayCount === 1 ? '' : 's'}`);
-    if (resCount) parts.push(`${resCount} additional resource${resCount === 1 ? '' : 's'}`);
-    if (!parts.length) return 'Materials for this folder will be added soon.';
-    return parts.join(' &middot; ');
   }
 
   function selectTopic(key) {
