@@ -118,7 +118,7 @@
     const topic = DATA.topics.find(t => t.key === key);
     const sheet = DATA.sheets[key];
     let html = `<div class="page-head">
-      <div class="kicker">Training Directory</div>
+      <div class="kicker">LSH Academy Index</div>
       <h1>${escapeHTML(topic.name)}</h1>
       <p>${describeSheet(sheet)}</p>
     </div>`;
